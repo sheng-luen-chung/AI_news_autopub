@@ -1,3 +1,4 @@
-arxiv
 gtts
-google-generativeai 
+arxiv
+python-dotenv
+google-generativeai
