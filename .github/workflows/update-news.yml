@@ -2,17 +2,18 @@ name: Update News and Deploy
 
 on:
   schedule:
-    - cron: "0 * * * *"
-  workflow_dispatch:
+    - cron: "0 * * * *"  # 每小時整點執行
+  workflow_dispatch:      # 可手動觸發
 
 jobs:
   update-and-deploy:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write     # 允許修改 repo 內容
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -29,12 +30,13 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python news_update.py
 
-      - name: Commit and push changes
+      - name: Commit and push changes (always push)
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add docs/
-          git diff --cached --quiet || git commit -m "📦 自動更新：新增最新 AI 文章" && git push
+          git commit -m "🔁 強制部署 GitHub Pages" || echo "⚠️ 沒有內容變化，略過 commit"
+          git push
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
