@@ -56,7 +56,7 @@ def fetch_ai_papers(query, processed_ids, max_results=50):
 
         processed_ids.add(arxiv_id)
         new_ids.add(arxiv_id)
-        break  # 每個類別只抓一篇
+        break  # 每個 query 只取一篇
 
     return papers, new_ids
 
@@ -73,26 +73,15 @@ def summarize_to_chinese(title, summary):
         f'{{"title_zh": "...", "summary_zh": "...", "applications": ["...", "...", "..."], "pitch": "..."}}'
     )
 
-    response = model.generate_content(prompt)
-    text = response.text.strip()
-
-    # 移除程式區塊標記 ```json 或 ``` 等
-    text = re.sub(r"^```(json)?|```$", "", text, flags=re.MULTILINE).strip()
-
-    # 嘗試逐行解析，只取第一段合法 JSON
-    for part in text.splitlines():
-        try:
-            return json.loads(part)
-        except json.JSONDecodeError:
-            continue
-
-    # fallback：嘗試整段載入
     try:
+        response = model.generate_content(prompt)
+        text = response.text.strip()
+        text = re.sub(r"^```json|^```|```$", "", text, flags=re.MULTILINE).strip()
         return json.loads(text)
-    except json.JSONDecodeError as e:
-        print("⚠️ 無法解析 Gemini 回傳的 JSON，原始回應如下：\n")
-        print(text)
-        raise e
+    except Exception as e:
+        print("⚠️ 無法解析 Gemini 回傳的 JSON，跳過該筆資料。")
+        print("🔹 原始內容：\n", response.text)
+        return None
 
 # === 將摘要轉成語音檔 ===
 def save_audio(text, filename):
@@ -112,16 +101,19 @@ def main():
         if result:
             papers.extend(result)
             new_processed_ids.update(new_ids)
-            print(f"已抓取: {result[0]['title']}")
-    print(f"總共抓取到 {len(papers)} 篇文章")
+            print(f"✅ 已抓取: {result[0]['title']}")
+    print(f"📚 總共抓取到 {len(papers)} 篇文章")
 
     if len(papers) == 0:
         print("⚠️ 沒有抓到任何新文章")
         return
 
+    count = 0
     for i, paper in enumerate(papers):
-        print(f"正在處理第 {i+1} 篇 {paper['title']}")
+        print(f"🔄 正在處理第 {i+1} 篇 {paper['title']}")
         result = summarize_to_chinese(paper['title'], paper['summary'])
+        if result is None:
+            continue  # 跳過格式錯誤的回應
 
         audio_text = (
             f"{result['title_zh']}\n\n"
@@ -148,6 +140,11 @@ def main():
 
         with open(NEWS_PATH, "a", encoding="utf-8") as f:
             f.write(json.dumps(paper, ensure_ascii=False) + "\n")
+
+        count += 1
+        if count >= 5:
+            print("🚫 已達每日上限 5 筆，停止更新")
+            break
 
     save_processed_ids(all_processed_ids.union(new_processed_ids))
     print("✅ 更新完成：news.jsonl 和 MP3 音檔已產生")
