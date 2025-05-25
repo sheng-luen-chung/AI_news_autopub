@@ -1,4 +1,3 @@
-# update_news.py
 import re
 import arxiv
 import json
@@ -27,11 +26,10 @@ def load_processed_ids(path=PROCESSED_IDS_PATH):
 
 def save_processed_ids(ids, path=PROCESSED_IDS_PATH):
     with open(path, "w") as f:
-        f.write("\n".join(ids))
+        f.write("\n".join(sorted(ids)))
 
 # === 抓取 arXiv 論文摘要 ===
-def fetch_ai_papers(query, max_results=50):
-    processed_ids = load_processed_ids()
+def fetch_ai_papers(query, processed_ids, max_results=50):
     client = arxiv.Client()
     search = arxiv.Search(
         query=f'"{query}"',
@@ -39,22 +37,28 @@ def fetch_ai_papers(query, max_results=50):
         sort_by=arxiv.SortCriterion.SubmittedDate
     )
     papers = []
+    new_ids = set()
+
     for result in client.results(search):
-        if result.get_short_id() in processed_ids:
+        arxiv_id = result.get_short_id()
+        if arxiv_id in processed_ids:
             continue
+
         papers.append({
             "query": query,
-            "id": result.get_short_id(),
+            "id": arxiv_id,
             "url": result.entry_id,
             "title": result.title,
             "summary": result.summary,
             "authors": [author.name for author in result.authors],
             "published_date": result.published.strftime("%Y-%m-%d"),
         })
-        processed_ids.add(result.get_short_id())
-        break  # 每個類別只取一篇
-    save_processed_ids(processed_ids)
-    return papers
+
+        processed_ids.add(arxiv_id)
+        new_ids.add(arxiv_id)
+        break  # 每個類別只抓一篇
+
+    return papers, new_ids
 
 # === Gemini 生成中文摘要與 pitch ===
 def summarize_to_chinese(title, summary):
@@ -88,14 +92,17 @@ def save_audio(text, filename):
 # === 主程式 ===
 def main():
     os.makedirs(AUDIO_DIR, exist_ok=True)
+    all_processed_ids = load_processed_ids()
+    new_processed_ids = set()
     papers = []
 
     for query in QUERY:
         print(f"正在抓取 {query} 相關文章...")
-        result = fetch_ai_papers(query)
+        result, new_ids = fetch_ai_papers(query, all_processed_ids)
         if result:
             papers.extend(result)
-            print(f"已抓取: {papers[-1]['title']}")
+            new_processed_ids.update(new_ids)
+            print(f"已抓取: {result[0]['title']}")
     print(f"總共抓取到 {len(papers)} 篇文章")
 
     if len(papers) == 0:
@@ -132,6 +139,7 @@ def main():
         with open(NEWS_PATH, "a", encoding="utf-8") as f:
             f.write(json.dumps(paper, ensure_ascii=False) + "\n")
 
+    save_processed_ids(all_processed_ids.union(new_processed_ids))
     print("✅ 更新完成：news.jsonl 和 MP3 音檔已產生")
 
 if __name__ == "__main__":
