@@ -75,8 +75,18 @@ def summarize_to_chinese(title, summary):
 
     response = model.generate_content(prompt)
     text = response.text.strip()
-    text = re.sub(r"^```json|^```|```$", "", text, flags=re.MULTILINE).strip()
 
+    # 移除程式區塊標記 ```json 或 ``` 等
+    text = re.sub(r"^```(json)?|```$", "", text, flags=re.MULTILINE).strip()
+
+    # 嘗試逐行解析，只取第一段合法 JSON
+    for part in text.splitlines():
+        try:
+            return json.loads(part)
+        except json.JSONDecodeError:
+            continue
+
+    # fallback：嘗試整段載入
     try:
         return json.loads(text)
     except json.JSONDecodeError as e:
